@@ -26,5 +26,5 @@ anyhow  = "1"
 dashmap = "5.4.0"
 
 swc_ecma_ast    = { version = "0.110.18", path = "../swc_ecma_ast" }
-swc_ecma_parser = { version = "0.141.38", path = "../swc_ecma_parser" }
+swc_ecma_parser = { version = "0.141.37", path = "../swc_ecma_parser" }
 testing         = { version = "0.35.15", path = "../testing" }

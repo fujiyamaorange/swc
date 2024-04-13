@@ -38,7 +38,7 @@ serde_json = "1"
 swc_common = { version = "0.33.13", path = "../swc_common", features = [
   "sourcemap",
 ] }
-swc_ecma_parser = { version = "0.141.38", path = "../swc_ecma_parser" }
+swc_ecma_parser = { version = "0.141.37", path = "../swc_ecma_parser" }
 swc_ecma_testing = { version = "0.22.16", path = "../swc_ecma_testing" }
 swc_malloc = { version = "0.5.10", path = "../swc_malloc" }
 testing = { version = "0.35.15", path = "../testing" }
