@@ -135,9 +135,12 @@ impl<'a> Tester<'a> {
         res
     }
 
-    // TODO: 計測する
     pub fn parse_module(&mut self, file_name: &str, src: &str) -> Result<Module, ()> {
-        self.with_parser(file_name, Syntax::default(), src, |p| p.parse_module())
+        let parse_start = std::time::Instant::now();
+        let result = self.with_parser(file_name, Syntax::default(), src, |p| p.parse_module());
+        let parse_end = std::time::Instant::now();
+        println!("[LOG] parse_module in {:?}", parse_end - parse_start);
+        result
     }
 
     pub fn parse_stmts(&mut self, file_name: &str, src: &str) -> Result<Vec<Stmt>, ()> {
