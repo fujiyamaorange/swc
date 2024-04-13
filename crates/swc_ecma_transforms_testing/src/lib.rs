@@ -135,6 +135,7 @@ impl<'a> Tester<'a> {
         res
     }
 
+    // TODO: 計測する
     pub fn parse_module(&mut self, file_name: &str, src: &str) -> Result<Module, ()> {
         self.with_parser(file_name, Syntax::default(), src, |p| p.parse_module())
     }
@@ -154,6 +155,7 @@ impl<'a> Tester<'a> {
         Ok(stmts.pop().unwrap())
     }
 
+    // NOTE: ここでASTに変換→transformを行なっている？
     pub fn apply_transform<T: Fold>(
         &mut self,
         mut tr: T,
@@ -165,6 +167,7 @@ impl<'a> Tester<'a> {
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
+        let module_start = std::time::Instant::now();
         let module = {
             let mut p = Parser::new_from(Lexer::new(
                 syntax,
@@ -182,10 +185,22 @@ impl<'a> Tester<'a> {
 
             res?
         };
+        let module_end = std::time::Instant::now();
+        println!(
+            "[LOG] apply_transform:parse_module in {:?}",
+            module_end - module_start
+        );
 
+        // NOTE: transformを適用？
+        let transform_start = std::time::Instant::now();
         let module = Program::Module(module)
             .fold_with(&mut tr)
             .fold_with(&mut as_folder(Normalizer));
+        let transform_end = std::time::Instant::now();
+        println!(
+            "[LOG] apply_transform:transform in {:?}",
+            transform_end - transform_start
+        );
 
         Ok(module.expect_module())
     }
@@ -428,6 +443,7 @@ where
     F: FnOnce(&mut Tester) -> P,
     P: Fold,
 {
+    let start = std::time::Instant::now();
     let loc = panic::Location::caller();
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
@@ -440,13 +456,16 @@ where
             .expect("test_inlined_transform does not support paths outside of the crate root"),
     );
 
-    test_fixture_inner(
+    let result = test_fixture_inner(
         syntax,
         Box::new(move |tester| Box::new(tr(tester))),
         input,
         &snapshot_dir.join(format!("{test_name}.js")),
         Default::default(),
-    )
+    );
+    let end = std::time::Instant::now();
+    println!("[LOG] test_inlined_transform end in {:?}", end - start);
+    result
 }
 
 /// NOT A PUBLIC API. DO NOT USE.
@@ -506,7 +525,13 @@ macro_rules! test {
     ($syntax:expr, $tr:expr, $test_name:ident, $input:expr) => {
         #[test]
         fn $test_name() {
-            $crate::test_inlined_transform(stringify!($test_name), $syntax, $tr, $input)
+            println!("\n[LOG] Test started!");
+            let start = std::time::Instant::now();
+            let result =
+                $crate::test_inlined_transform(stringify!($test_name), $syntax, $tr, $input);
+            let end = std::time::Instant::now();
+            println!("[LOG] Test ended in {:?}", end);
+            result
         }
     };
 
@@ -868,6 +893,7 @@ fn test_fixture_inner<'a>(
     output: &Path,
     config: FixtureTestConfig,
 ) {
+    let start = std::time::Instant::now();
     let _logger = testing::init();
 
     let expected = read_to_string(output);
@@ -875,9 +901,22 @@ fn test_fixture_inner<'a>(
     let expected = expected.unwrap_or_default();
 
     let expected_src = Tester::run(|tester| {
+        // NOTE: 読み込んだファイルをtransformする
+        let expected_applying_transform_start = std::time::Instant::now();
         let expected_module = tester.apply_transform(noop(), "expected.js", syntax, &expected)?;
+        let expected_applying_transform_end = std::time::Instant::now();
+        println!(
+            "[LOG] test_fixture_inner:expected:applying_transform in {:?}",
+            expected_applying_transform_end - expected_applying_transform_start
+        );
 
+        let start_print = std::time::Instant::now();
         let expected_src = tester.print(&expected_module, &tester.comments.clone());
+        let end_print = std::time::Instant::now();
+        println!(
+            "[LOG] test_fixture_inner:expected:print in {:?}",
+            end_print - start_print
+        );
 
         println!(
             "----- {} -----\n{}",
@@ -899,7 +938,13 @@ fn test_fixture_inner<'a>(
 
         println!("----- {} -----", Color::Green.paint("Actual"));
 
+        let start_input = std::time::Instant::now();
         let actual = tester.apply_transform(tr, "input.js", syntax, input)?;
+        let end_input = std::time::Instant::now();
+        println!(
+            "[LOG] test_fixture_inner:actual:applying_transform in {:?}",
+            end_input - start_input
+        );
 
         match ::std::env::var("PRINT_HYGIENE") {
             Ok(ref s) if s == "1" => {
@@ -916,15 +961,23 @@ fn test_fixture_inner<'a>(
             _ => {}
         }
 
+        let actual_hygiene_start = std::time::Instant::now();
         let actual = actual
             .fold_with(&mut crate::hygiene::hygiene())
             .fold_with(&mut crate::fixer::fixer(Some(&tester.comments)));
+        let actual_hygiene_end = std::time::Instant::now();
+        println!(
+            "[LOG] test_fixture_inner:actual_hygiene:end in {:?}",
+            actual_hygiene_end - actual_hygiene_start
+        );
 
+        let actual_start_print = std::time::Instant::now();
         let actual_src = {
             let module = &actual;
             let comments: &Rc<SingleThreadedComments> = &tester.comments.clone();
             let mut buf = vec![];
             {
+                let emit_start = std::time::Instant::now();
                 let mut emitter = Emitter {
                     cfg: Default::default(),
                     cm: tester.cm.clone(),
@@ -937,8 +990,15 @@ fn test_fixture_inner<'a>(
                     comments: Some(comments),
                 };
 
-                // println!("Emitting: {:?}", module);
+                // println!("[LOG] parsed_module {:?}", module);
+                // NOTE: moduleはparseしたAST
+                // NOTE: moduleがシンプルだから実行時間に差が出ている？
                 emitter.emit_module(module).unwrap();
+                let emit_end = std::time::Instant::now();
+                println!(
+                    "[LOG] test_fixture_inner:actual:emit_module in {:?}",
+                    emit_end - emit_start
+                );
             }
 
             if let Some(src_map) = &mut src_map {
@@ -952,6 +1012,11 @@ fn test_fixture_inner<'a>(
             let s = String::from_utf8_lossy(&buf);
             s.to_string()
         };
+        let actual_end_print = std::time::Instant::now();
+        println!(
+            "[LOG] test_fixture_inner:actual:print in {:?}",
+            actual_end_print - actual_start_print
+        );
 
         Ok(actual_src)
     });
@@ -965,7 +1030,7 @@ fn test_fixture_inner<'a>(
     }
 
     if let Some(actual_src) = actual_src {
-        println!("{}", actual_src);
+        println!("{}", actual_src);        
 
         if let Some(sourcemap) = &sourcemap {
             println!("----- ----- ----- ----- -----");
@@ -974,8 +1039,8 @@ fn test_fixture_inner<'a>(
 
         if actual_src != expected_src {
             NormalizedOutput::from(actual_src)
-                .compare_to_file(output)
-                .unwrap();
+            .compare_to_file(output)
+            .unwrap();
         }
     }
 
@@ -989,6 +1054,8 @@ fn test_fixture_inner<'a>(
             .compare_to_file(output.with_extension("map"))
             .unwrap();
     }
+    let end = std::time::Instant::now();
+    println!("[LOG] test_fixture_inner:end in {:?}", end - start);
 }
 
 /// Creates a url for https://evanw.github.io/source-map-visualization/
