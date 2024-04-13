@@ -155,7 +155,6 @@ impl<'a> Tester<'a> {
         Ok(stmts.pop().unwrap())
     }
 
-    // NOTE: ここでASTに変換→transformを行なっている？
     pub fn apply_transform<T: Fold>(
         &mut self,
         mut tr: T,
@@ -191,7 +190,6 @@ impl<'a> Tester<'a> {
             module_end - module_start
         );
 
-        // NOTE: transformを適用？
         let transform_start = std::time::Instant::now();
         let module = Program::Module(module)
             .fold_with(&mut tr)
@@ -992,7 +990,6 @@ fn test_fixture_inner<'a>(
 
                 // println!("[LOG] parsed_module {:?}", module);
                 // NOTE: moduleはparseしたAST
-                // NOTE: moduleがシンプルだから実行時間に差が出ている？
                 emitter.emit_module(module).unwrap();
                 let emit_end = std::time::Instant::now();
                 println!(
